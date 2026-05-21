@@ -1,0 +1,11 @@
+{
+    "HP": {
+        "username": "sa",
+        "password": "gAAAAABqD1QsHrzrPH9WzTv2tf3MwiQsYAaC0iDy7K6QmWTn-h139p-hGNNtfTi1-8RZnu_cotJ96B4Vc9HLM1y9BBWIaKcc_g==",
+        "databases": [
+            "Hell_Protein"
+        ],
+        "backup_path": "C:\\ggg",
+        "filename_format": "backup_{db}_{datetime}"
+    }
+}
