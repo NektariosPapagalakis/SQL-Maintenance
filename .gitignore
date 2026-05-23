@@ -1,6 +1,6 @@
 # Secrets
 secret.key
-users_config.json
+config.json
 
 # IDE config files
 .idea/

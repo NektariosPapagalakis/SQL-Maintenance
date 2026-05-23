@@ -1,325 +1,177 @@
 import os
+import subprocess
 import json
-import argparse
-import sys
 from datetime import datetime
-from cryptography.fernet import Fernet
 import pyodbc
+from cryptography.fernet import Fernet
 
-# --- ΡΥΘΜΙΣΕΙΣ ΚΑΙ ΑΡΧΕΙΑ ---
-USERS_FILE = "users_config.json"
+CONFIG_FILE = "config.json"
 KEY_FILE = "secret.key"
-SQL_SERVER_NAME = r"DESKTOP-JROIMSG\SQLEXPRESS"
 
-if not os.path.exists(KEY_FILE):
+
+def generate_and_save_key():
+    """Παράγει ένα κλειδί κρυπτογράφησης και το αποθηκεύει σε ξεχωριστό αρχείο."""
+    key = Fernet.generate_key()
     with open(KEY_FILE, "wb") as key_file:
-        key_file.write(Fernet.generate_key())
-
-with open(KEY_FILE, "rb") as key_file:
-    cipher_suite = Fernet(key_file.read())
+        key_file.write(key)
+    return key
 
 
-# --- ΣΥΝΑΡΤΗΣΕΙΣ ΔΙΑΧΕΙΡΙΣΗΣ ΑΡΧΕΙΟΥ JSON ---
-
-def load_profiles():
-    if not os.path.exists(USERS_FILE):
-        return {}
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_profiles(profiles):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(profiles, f, indent=4, ensure_ascii=False)
+def load_key():
+    """Φορτώνει το κλειδί κρυπτογράφησης από το αρχείο."""
+    if not os.path.exists(KEY_FILE):
+        return generate_and_save_key()
+    with open(KEY_FILE, "rb") as key_file:
+        return key_file.read()
 
 
-# --- ΚΑΤΑΧΩΡΗΣΗ & ΕΠΕΞΕΡΓΑΣΙΑ ΧΡΗΣΤΩΝ ---
+def save_config(username, password):
+    """Κρυπτογραφεί τον κωδικό και αποθηκεύει τα στοιχεία στο config.json."""
+    key = load_key()
+    fernet = Fernet(key)
 
-def register_user():
-    print("\n--- 📝 Καταχώρηση Νέου Προφίλ ---")
-    title = input("Ορίστε έναν Τίτλο για τη Σύνδεση (π.χ. Production_Server): ").strip()
-    username = input("Δώστε το username: ").strip()
-    password = input("Δώστε το password: ").strip()
+    # Κρυπτογράφηση του κωδικού (πρέπει να μετατραπεί πρώτα σε bytes)
+    encrypted_password = fernet.encrypt(password.encode()).decode()
 
-    if not title or not username or not password:
-        print("❌ Ο Τίτλος, το username και το password είναι υποχρεωτικά!")
-        return
-
-    profiles = load_profiles()
-    if title in profiles:
-        print("❌ Αυτός ο Τίτλος Σύνδεσης υπάρχει ήδη!")
-        return
-
-    db_input = input("Δώστε τις βάσεις δεδομένων (π.χ. Hell_Protein, Test): ")
-    databases = [db.strip() for db in db_input.split(",") if db.strip()]
-
-    backup_path = input("Δώστε την ΑΠΟΛΥΤΗ διαδρομή για τα backup (π.χ. C:\\SQLBackups): ").strip()
-    if not backup_path:
-        backup_path = "C:\\SQLBackups"
-
-    print("\nΟρίστε τη δομή ονόματος του αρχείου backup.")
-    print("Χρησιμοποιήστε τα μεταβλητά πεδία {db} και {datetime}")
-    fn_format = input("Format ονόματος [Προεπιλογή: backup_{db}_{datetime}]: ").strip()
-    if not fn_format:
-        fn_format = "backup_{db}_{datetime}"
-
-    encrypted_password = cipher_suite.encrypt(password.encode('utf-8')).decode('utf-8')
-
-    profiles[title] = {
+    config_data = {
         "username": username,
-        "password": encrypted_password,
-        "databases": databases,
-        "backup_path": backup_path,
-        "filename_format": fn_format
+        "password": encrypted_password
     }
 
-    save_profiles(profiles)
-    print(f"✔️ Το προφίλ με τίτλο '{title}' δημιουργήθηκε με επιτυχία!")
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=4)
+    print(f"[*] Τα στοιχεία σύνδεσης αποθηκεύτηκαν με ασφάλεια στο {CONFIG_FILE}")
 
 
-def view_and_edit_profiles():
-    """Εμφανίζει τις καταχωρίσεις και επιτρέπει την επεξεργασία τους."""
-    profiles = load_profiles()
-    if not profiles:
-        print("\n❌ Δεν υπάρχουν καταχωρημένα προφίλ.")
-        return
+def load_config():
+    """Φορτώνει και αποκρυπτογραφεί τα στοιχεία σύνδεσης."""
+    if not os.path.exists(CONFIG_FILE):
+        return None, None
 
-    print("\n==================================================")
-    print("           ΛΙΣΤΑ ΚΑΤΑΧΩΡΗΜΕΝΩΝ ΠΡΟΦΙΛ             ")
-    print("==================================================")
+    key = load_key()
+    fernet = Fernet(key)
 
-    for idx, (title, data) in enumerate(profiles.items(), 1):
-        fn_fmt = data.get("filename_format", "backup_{db}_{datetime}")
-        # Υποστήριξη για παλιά logs που ίσως δεν είχαν το πεδίο username ως εσωτερικό key
-        uname = data.get("username", title)
-        print(f"{idx}. Τίτλος Σύνδεσης: {title}")
-        print(f"   Username:       {uname}")
-        print(f"   Password:       ******** (Κρυπτογραφημένο)")
-        print(f"   Databases:      {', '.join(data['databases'])}")
-        print(f"   Path:           {data['backup_path']}")
-        print(f"   Format:         {fn_fmt}")
-        print("-" * 50)
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        config_data = json.load(f)
 
-    choice = input("Θέλετε να επεξεργαστείτε κάποιο προφίλ; Γράψτε τον Τίτλο Σύνδεσης (ή Enter για ακύρωση): ").strip()
-    if not choice:
-        return
+    username = config_data["username"]
+    encrypted_password = config_data["password"]
 
-    if choice in profiles:
-        print(f"\n--- ✏️ Επεξεργασία Προφίλ: {choice} ---")
-        print("(Αφήστε κενό αν δεν θέλετε να αλλάξετε το συγκεκριμένο πεδίο)")
+    # Αποκρυπτογράφηση του κωδικού
+    decrypted_password = fernet.decrypt(encrypted_password.encode()).decode()
 
-        # Νέο Username
-        new_user = input(f"Νέο Username (Τρέχον: {profiles[choice].get('username', '')}): ").strip()
-        if new_user:
-            profiles[choice]["username"] = new_user
-
-        # Νέος Κωδικός
-        new_pass = input("Νέο Password: ").strip()
-        if new_pass:
-            profiles[choice]["password"] = cipher_suite.encrypt(new_pass.encode('utf-8')).decode('utf-8')
-
-        # Νέες Βάσεις
-        new_db = input("Νέες Βάσεις (χωρισμένες με κόμμα): ").strip()
-        if new_db:
-            profiles[choice]["databases"] = [db.strip() for db in new_db.split(",") if db.strip()]
-
-        # Νέο Path
-        new_path = input("Νέο Backup Path: ").strip()
-        if new_path:
-            profiles[choice]["backup_path"] = new_path
-
-        # Νέο Format
-        new_fmt = input("Νέο Format Ονόματος (π.χ. {db}_backup_{datetime}): ").strip()
-        if new_fmt:
-            profiles[choice]["filename_format"] = new_fmt
-
-        save_profiles(profiles)
-        print(f"✔️ Το προφίλ '{choice}' ενημερώθηκε επιτυχώς!")
-    else:
-        print("❌ Δεν βρέθηκε προφίλ με αυτόν τον τίτλο.")
+    return username, decrypted_password
 
 
-# --- ΑΥΤΟΜΑΤΟΠΟΙΗΜΕΝΟ Ή INTERACTIVE LOGIN ---
-
-def verify_and_run(username, password, selected_title=None):
-    profiles = load_profiles()
-    target_profile = None
-    profile_title = ""
-
-    # Αν είμαστε σε Interactive Mode, ξέρουμε ακριβώς ποιο προφίλ επέλεξε ο χρήστης
-    if selected_title:
-        if selected_title in profiles:
-            target_profile = profiles[selected_title]
-            profile_title = selected_title
-    else:
-        # Αν είμαστε σε Silent Mode (CLI args), ψάχνουμε ποιο προφίλ ταιριάζει με το username
-        for title, data in profiles.items():
-            if data.get("username") == username:
-                target_profile = data
-                profile_title = title
-                break
-
-    if not target_profile:
-        print("❌ Λάθος στοιχεία σύνδεσης ή το προφίλ δεν βρέθηκε.")
-        return False
-
-    encrypted_password = target_profile["password"]
-    try:
-        decrypted_password = cipher_suite.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
-    except Exception:
-        print("❌ Σφάλμα κατά την αποκρυπτογράφηση. Το κλειδί ασφαλείας ίσως άλλαξε.")
-        return False
-
-    if password != decrypted_password:
-        print("❌ Λάθος username ή password.")
-        return False
-
-    print(f"✔️ Επιτυχής σύνδεση στο προφίλ: [{profile_title}] (Χρήστης: {username})")
-
-    databases = target_profile["databases"]
-    backup_dir = target_profile["backup_path"]
-    fn_format = target_profile.get("filename_format", "backup_{db}_{datetime}")
-
-    if not databases:
-        print("⚠️ Δεν υπάρχουν καταχωρημένες βάσεις για αυτό το προφίλ.")
-        return False
-
-    # Εκτέλεση των διαδικασιών
-    run_full_backup(databases, backup_dir, fn_format)
-    cleanup_backups(backup_dir, keep_count=3)
-    return True
-
-
-# --- ΣΥΝΑΡΤΗΣΕΙΣ BACKUP ΚΑΙ CLEANUP ---
-
-def run_full_backup(databases, backup_dir, filename_format):
-    print("\n--- 📂 Έναρξη Full Backup (SQL Server) ---")
-
-    if not os.path.exists(backup_dir):
-        try:
-            os.makedirs(backup_dir)
-        except Exception as e:
-            print(f"❌ Αποτυχία δημιουργίας φακέλου {backup_dir}: {e}")
-            return
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
+def get_databases(username, password):
+    """Συνδέεται στον SQL Server Express και επιστρέφει μια λίστα με τις βάσεις."""
     conn_str = (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={SQL_SERVER_NAME};"
-        f"DATABASE=master;"
-        f"Trusted_Connection=yes;"
+        f"SERVER=DESKTOP-JROIMSG\\SQLEXPRESS;"
+        f"UID={username};"
+        f"PWD={password};"
     )
 
     try:
         conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = conn.cursor()
-    except Exception as e:
-        print(f"❌ Αποτυχία σύνδεσης στον SQL Server: {e}")
-        return
 
-    for db in databases:
-        try:
-            formatted_name = filename_format.format(db=db, datetime=timestamp)
-        except KeyError as e:
-            print(f"❌ Σφάλμα στο Format ονόματος. Μη έγκυρο πεδίο: {e}. Χρήση προεπιλογής.")
-            formatted_name = f"backup_{db}_{timestamp}"
+        cursor.execute("""
+            SELECT name 
+            FROM sys.databases 
+            WHERE name NOT IN ('master', 'model', 'msdb', 'tempdb')
+        """)
 
-        if not formatted_name.endswith(".bak"):
-            formatted_name += ".bak"
+        databases = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        return databases
 
-        full_backup_file_path = os.path.join(backup_dir, formatted_name)
-
-        sql_query = f"BACKUP DATABASE [{db}] TO DISK = '{full_backup_file_path}' WITH FORMAT, MEDIANAME = 'SQLServerBackup', NAME = 'Full Backup of {db}';"
-
-        print(f"Δημιουργία backup για τη βάση '{db}'...")
-        try:
-            cursor.execute(sql_query)
-            print(f"✅ Επιτυχές Backup -> {formatted_name}")
-        except Exception as e:
-            print(f"❌ Σφάλμα κατά το backup της βάσης '{db}': {e}")
-
-    cursor.close()
-    conn.close()
+    except pyodbc.Error as e:
+        print(f"\n[!] Σφάλμα σύνδεσης: {e}")
+        return None
 
 
-def cleanup_backups(backup_dir, keep_count=3):
-    print("\n--- 🧹 Εκκαθάριση Παλιών Backups (Clean up) ---")
-    if not os.path.exists(backup_dir):
-        return
+def create_backup(db_name, username, password, target_folder):
+    """Δημιουργεί το αρχείο .bak στο επιλεγμένο path."""
+    date_str = datetime.now().strftime("%Y_%m_%d")
+    backup_filename = f"{db_name}_{date_str}.bak"
+    backup_path = os.path.join(target_folder, backup_filename)
 
-    files = [os.path.join(backup_dir, f) for f in os.listdir(backup_dir) if f.endswith(".bak")]
-    files.sort(key=os.path.getmtime)
+    backup_query = f"BACKUP DATABASE [{db_name}] TO DISK='{backup_path}' WITH FORMAT, MEDIANAME='SQLServerBackup', NAME='Full Backup of {db_name}';"
 
-    if len(files) <= keep_count:
-        print(f"ℹ️ Βρέθηκαν {len(files)} backups. Το όριο είναι {keep_count}, δεν χρειάζεται διαγραφή.")
-        return
+    print(f"\n[... ] Ξεκινάει το backup για τη βάση '{db_name}'...")
 
-    files_to_delete = files[:-keep_count]
-    for file_path in files_to_delete:
-        try:
-            os.remove(file_path)
-            print(f"🗑️ Διαγράφηκε το παλαιότερο αρχείο: {os.path.basename(file_path)}")
-        except Exception as e:
-            print(f"❌ Αποτυχία διαγραφή {file_path}: {e}")
+    cmd = f'sqlcmd -S DESKTOP-JROIMSG\\SQLEXPRESS -U {username} -P "{password}" -Q "{backup_query}"'
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
-    print("✨ Η εκκαθάριση ολοκληρώθηκε!")
-
-
-# --- ΚΥΡΙΩΣ ΜΕΝΟΥ (INTERACTIVE) ---
-
-def interactive_menu():
-    while True:
-        print("\n=====================================")
-        print("   MSSQL SERVER SECURE BACKUP SYSTEM ")
-        print("=====================================")
-        print("1. Καταχώρηση Νέου Προφίλ (Με Τίτλο)")
-        print("2. Προβολή & Επεξεργασία Προφίλ")
-        print("3. Σύνδεση (Login) & Εκτέλεση Backup")
-        print("4. Έξοδος")
-
-        choice = input("Επιλέξτε ενέργεια (1-4): ").strip()
-
-        if choice == "1":
-            register_user()
-        elif choice == "2":
-            view_and_edit_profiles()
-        elif choice == "3":
-            profiles = load_profiles()
-            if not profiles:
-                print("❌ Δεν υπάρχουν καταχωρημένα προφίλ. Φτιάξτε ένα πρώτα.")
-                continue
-
-            print("\nΔιαθέσιμα Προφίλ Σύνδεσης:")
-            for title in profiles.keys():
-                print(f" - {title}")
-
-            t = input("\nΕπιλέξτε Τίτλο Σύνδεσης: ").strip()
-            u = input("Username: ").strip()
-            p = input("Password: ").strip()
-            verify_and_run(u, p, selected_title=t)
-        elif choice == "4":
-            print("Έξοδος από την εφαρμογή.")
-            break
-        else:
-            print("Μη έγκυρη επιλογή.")
+    if result.returncode == 0:
+        print(f"[✓] Το backup ολοκληρώθηκε επιτυχώς!")
+        print(f"[*] Αρχείο: {backup_path}")
+    else:
+        print(f"[!] Κάτι πήγε στραβά κατά το backup:")
+        print(result.stderr or result.stdout)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Secure MSSQL Backup Manager.")
-    parser.add_argument('-u', '--username', type=str, help="Username για silent backup")
-    parser.add_argument('-p', '--password', type=str, help="Password για silent backup")
+    print("=== SQL Server Backup Utility ===")
 
-    args = parser.parse_args()
+    # 1. Έλεγχος ή λήψη στοιχείων σύνδεσης
+    username, password = load_config()
 
-    if args.username and args.password:
-        # Στο silent mode, ψάχνει αυτόματα βάσει username
-        success = verify_and_run(args.username, args.password)
-        if not success:
-            sys.exit(1)
-        sys.exit(0)
+    if not username or not password:
+        print("[*] Δεν βρέθηκε αρχείο ρυθμίσεων. Παρακαλώ εισάγετε τα στοιχεία σας:")
+        username = input("Username: ")
+        password = input("Password: ")
+        save_config(username, password)
+
+    print("\n[... ] Αναζήτηση διαθέσιμων βάσεων δεδομένων...")
+    databases = get_databases(username, password)
+
+    if not databases:
+        print("[!] Δεν βρέθηκαν βάσεις δεδομένων ή απέτυχε η σύνδεση. Ελέγξτε τα στοιχεία στο config.json.")
+        # Αν αποτύχει, ίσως ο χρήστης θέλει να αλλάξει κωδικό, οπότε σβήνουμε το config για να ξαναρωτήσει την επόμενη φορά
+        if os.path.exists(CONFIG_FILE):
+            os.remove(CONFIG_FILE)
+        return
+
+    # 2. Εμφάνιση Βάσεων
+    print("\nΔιαθέσιμες Βάσεις Δεδομένων:")
+    for idx, db in enumerate(databases, 1):
+        print(f"{idx}. {db}")
+
+    # 3. Επιλογή Βάσης
+    while True:
+        try:
+            choice = int(input("\nΕπίλεξε τον αριθμό της βάσης που θέλεις για backup: "))
+            if 1 <= choice <= len(databases):
+                selected_db = databases[choice - 1]
+                break
+            else:
+                print(f"[!] Παρακαλώ βάλε έναν αριθμό από το 1 έως το {len(databases)}.")
+        except ValueError:
+            print("[!] Μη έγκυρη καταχώρηση. Δώσε έναν αριθμό.")
+
+    # 4. Ερώτηση για το Path αποθήκευσης
+    print("\n[?] Πού θέλεις να αποθηκευτεί το backup;")
+    print("    (Πληκτρολόγησε το path, π.χ., C:\\SQLBackups ή πάτα Enter για τον τρέχοντα φάκελο)")
+    user_path = input("Path: ").strip()
+
+    if not user_path:
+        target_folder = os.getcwd()
     else:
-        interactive_menu()
+        target_folder = user_path
+
+    if not os.path.exists(target_folder):
+        try:
+            os.makedirs(target_folder)
+            print(f"[*] Ο φάκελος '{target_folder}' δεν υπήρχε και δημιουργήθηκε.")
+        except Exception as e:
+            print(f"[!] Αδυναμία δημιουργίας του φακελού: {e}. Το backup θα ακυρωθεί.")
+            return
+
+    # 5. Εκτέλεση
+    create_backup(selected_db, username, password, target_folder)
 
 
 if __name__ == "__main__":
