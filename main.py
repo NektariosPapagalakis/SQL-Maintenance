@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 import urllib.request
 
 # Application Metadata
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 WEBHOOK_URL = "https://cloud.activepieces.com/api/v1/webhooks/YZDmbN3jTJBJYZV8oFZGj"
 
 if getattr(sys, 'frozen', False):
@@ -35,8 +35,9 @@ class CustomPrefixFormatter(logging.Formatter):
 
 
 def send_webhook_notification(installation_name, status, log_type, macro_name):
-    """Στέλνει JSON Payload στο Activepieces Webhook με την προσθήκη του log_type."""
+    """Στέλνει JSON Payload στο Activepieces Webhook με την προσθήκη των log_type και job."""
     payload = {
+        "job": "MaintenancePlan",  # Σταθερή παράμετρος
         "installation_name": installation_name,
         "status": status,
         "log_type": log_type,  # "Log" ή "Error"
@@ -365,9 +366,15 @@ def create_sequence(config, databases):
 
 
 def execute_action_direct(choice, config, username, password, selected_databases):
+    """Εκτελεί μια μεμονωμένη direct εντολή από το μενού και στέλνει το αποτέλεσμα στο Webhook."""
+    global current_run_logs
+    current_run_logs = []  # Καθαρισμός για το τρέχον direct run
+
     action_names = {"1": "BACKUP", "2": "CLEANUP", "3": "INTEGRITY_CHECK", "4": "UPDATE_STATS", "5": "INDEX_ANALYSIS"}
     tag = action_names.get(choice, "UNKNOWN")
-    logging.info(f">> Task Started: {tag}")
+    inst_name = config.get("installation_name", "Unknown_Installation")
+
+    logging.info(f">> Direct Task Started: {tag}")
 
     errors = []
     if choice == "2":
@@ -391,9 +398,16 @@ def execute_action_direct(choice, config, username, password, selected_databases
                 logging.error(msg)
 
     if errors:
-        logging.error(f"<< Task Completed with errors: {tag}")
+        status = "FAILED"
+        log_type = "Error"
+        logging.error(f"<< Direct Task Completed with errors: {tag}")
     else:
-        logging.info(f"<< Task Completed successfully: {tag}")
+        status = "SUCCESS"
+        log_type = "Log"
+        logging.info(f"<< Direct Task Completed successfully: {tag}")
+
+    # Αποστολή ειδοποίησης στο Webhook και για τα direct actions
+    send_webhook_notification(inst_name, status, log_type, f"Direct_{tag}")
 
 
 def execute_macro_sequence(seq_name, macro_data, config, username, password, databases):
@@ -453,7 +467,7 @@ def execute_macro_sequence(seq_name, macro_data, config, username, password, dat
         for err in macro_errors:
             logging.error(f"   ↳ {err}")
 
-    # Αποστολή στο Activepieces Webhook (Προστέθηκε η παράμετρος log_type)
+    # Αποστολή στο Activepieces Webhook
     send_webhook_notification(inst_name, status, log_type, seq_name)
 
     # Ενημέρωση Metadata στο config

@@ -56,17 +56,14 @@
   ('_hashlib.pyd',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_hashlib.pyd',
    'EXTENSION'),
-  ('_ssl.pyd',
-   'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_ssl.pyd',
+  ('unicodedata.pyd',
+   'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\unicodedata.pyd',
    'EXTENSION'),
   ('select.pyd',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\select.pyd',
    'EXTENSION'),
   ('_socket.pyd',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_socket.pyd',
-   'EXTENSION'),
-  ('unicodedata.pyd',
-   'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\unicodedata.pyd',
    'EXTENSION'),
   ('_zstd.pyd',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_zstd.pyd',
@@ -79,6 +76,9 @@
    'EXTENSION'),
   ('_ctypes.pyd',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_ctypes.pyd',
+   'EXTENSION'),
+  ('_ssl.pyd',
+   'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_ssl.pyd',
    'EXTENSION'),
   ('cryptography\\hazmat\\bindings\\_rust.pyd',
    'C:\\Coding Projects\\SQL '
@@ -98,15 +98,27 @@
   ('libcrypto-3.dll',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\libcrypto-3.dll',
    'BINARY'),
-  ('libssl-3.dll',
-   'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\libssl-3.dll',
-   'BINARY'),
   ('libffi-8.dll',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\libffi-8.dll',
+   'BINARY'),
+  ('libssl-3.dll',
+   'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\libssl-3.dll',
    'BINARY'),
   ('python3.dll',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\python3.dll',
    'BINARY'),
+  ('cryptography-48.0.0.dist-info\\WHEEL',
+   'C:\\Coding Projects\\SQL '
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\WHEEL',
+   'DATA'),
+  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
+   'C:\\Coding Projects\\SQL '
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
+   'DATA'),
+  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.APACHE',
+   'C:\\Coding Projects\\SQL '
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.APACHE',
+   'DATA'),
   ('cryptography-48.0.0.dist-info\\licenses\\LICENSE',
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE',
@@ -115,21 +127,13 @@
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\INSTALLER',
    'DATA'),
-  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
-   'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
-   'DATA'),
-  ('cryptography-48.0.0.dist-info\\METADATA',
-   'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\METADATA',
-   'DATA'),
-  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.APACHE',
-   'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.APACHE',
-   'DATA'),
   ('cryptography-48.0.0.dist-info\\sboms\\cryptography-rust.cyclonedx.json',
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\sboms\\cryptography-rust.cyclonedx.json',
+   'DATA'),
+  ('cryptography-48.0.0.dist-info\\sboms\\sbom.json',
+   'C:\\Coding Projects\\SQL '
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\sboms\\sbom.json',
    'DATA'),
   ('cryptography-48.0.0.dist-info\\REQUESTED',
    'C:\\Coding Projects\\SQL '
@@ -139,13 +143,9 @@
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\RECORD',
    'DATA'),
-  ('cryptography-48.0.0.dist-info\\sboms\\sbom.json',
+  ('cryptography-48.0.0.dist-info\\METADATA',
    'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\sboms\\sbom.json',
-   'DATA'),
-  ('cryptography-48.0.0.dist-info\\WHEEL',
-   'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\WHEEL',
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\METADATA',
    'DATA'),
   ('base_library.zip',
    'C:\\Coding Projects\\SQL '
