@@ -130,17 +130,25 @@
   ('python3.dll',
    'C:\\Users\\SupportLogistic-i\\AppData\\Local\\Python\\pythoncore-3.14-64\\python3.dll',
    'BINARY'),
-  ('cryptography-48.0.0.dist-info\\METADATA',
+  ('cryptography-48.0.0.dist-info\\WHEEL',
    'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\METADATA',
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\WHEEL',
+   'DATA'),
+  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
+   'C:\\Coding Projects\\SQL '
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
    'DATA'),
   ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.APACHE',
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.APACHE',
    'DATA'),
-  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
+  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE',
    'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE.BSD',
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE',
+   'DATA'),
+  ('cryptography-48.0.0.dist-info\\INSTALLER',
+   'C:\\Coding Projects\\SQL '
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\INSTALLER',
    'DATA'),
   ('cryptography-48.0.0.dist-info\\sboms\\cryptography-rust.cyclonedx.json',
    'C:\\Coding Projects\\SQL '
@@ -150,25 +158,17 @@
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\sboms\\sbom.json',
    'DATA'),
-  ('cryptography-48.0.0.dist-info\\WHEEL',
+  ('cryptography-48.0.0.dist-info\\REQUESTED',
    'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\WHEEL',
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\REQUESTED',
    'DATA'),
   ('cryptography-48.0.0.dist-info\\RECORD',
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\RECORD',
    'DATA'),
-  ('cryptography-48.0.0.dist-info\\licenses\\LICENSE',
+  ('cryptography-48.0.0.dist-info\\METADATA',
    'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\licenses\\LICENSE',
-   'DATA'),
-  ('cryptography-48.0.0.dist-info\\REQUESTED',
-   'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\REQUESTED',
-   'DATA'),
-  ('cryptography-48.0.0.dist-info\\INSTALLER',
-   'C:\\Coding Projects\\SQL '
-   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\INSTALLER',
+   'Maintenance\\.venv\\Lib\\site-packages\\cryptography-48.0.0.dist-info\\METADATA',
    'DATA'),
   ('base_library.zip',
    'C:\\Coding Projects\\SQL '
@@ -177,7 +177,7 @@
  [],
  False,
  False,
- 1780050978,
+ 1779721571,
  [('run.exe',
    'C:\\Coding Projects\\SQL '
    'Maintenance\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\run.exe',
