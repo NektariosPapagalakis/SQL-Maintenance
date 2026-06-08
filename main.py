@@ -11,7 +11,7 @@ import urllib.request
 import urllib.error
 
 # Application Metadata
-VERSION = "1.3.9"
+VERSION = "1.4.0"
 WEBHOOK_URL = None  # Ορίζεται δυναμικά κατά το setup
 
 if getattr(sys, 'frozen', False):
@@ -31,7 +31,8 @@ class CustomPrefixFormatter(logging.Formatter):
     def format(self, record):
         prefix = "Error :" if record.levelno >= logging.ERROR else "Log :"
         log_msg = f"{self.formatTime(record, '%Y-%m-%d %H:%M:%S')} [{prefix}] {record.getMessage()}"
-        current_run_logs.append(log_msg)  # Κρατάμε το log για το webhook
+        # Δεν κάνουμε append αυτόματα στο current_run_logs από εδώ,
+        # για να έχουμε τον πλήρη έλεγχο του Single Line format στα Tasks.
         return log_msg
 
 
@@ -480,10 +481,14 @@ def create_sequence(config, databases):
     if not name:
         name = f"Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    if "sequences" not in config:
-        config["sequences"] = {}
+    # Διαβάζουμε πρώτα το τελευταίο config από το αρχείο για σιγουριά
+    fresh_config = load_full_config()
 
-    config["sequences"][name] = {
+    if "sequences" not in fresh_config:
+        fresh_config["sequences"] = {}
+
+    # Γράφουμε τα δεδομένα στο φρέσκο config
+    fresh_config["sequences"][name] = {
         "steps": sequence_steps,
         "databases": selected_dbs,
         "last_run": "-",
@@ -491,8 +496,9 @@ def create_sequence(config, databases):
         "recurrence": recurrence_type,
         "schedule_data": schedule_data
     }
-    config = load_full_config() # Ανανέωση
-    save_full_config(config)
+
+    # Αποθήκευση στο αρχείο
+    save_full_config(fresh_config)
     print(f"\n[✓] Η αλληλουχία '{name}' αποθηκεύτηκε επιτυχώς!")
 
 
@@ -504,7 +510,9 @@ def execute_action_direct(choice, config, server, username, password, selected_d
     tag = action_names.get(choice, "UNKNOWN")
     inst_name = config.get("installation_name", "Unknown_Installation")
 
-    logging.info(f">> Direct Task Started: {tag}")
+    # Κρατάμε μόνο το start time στη μνήμη (δεν γράφουμε ακόμα στο log αρχείο)
+    start_time = datetime.now()
+    start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
 
     errors = []
     if choice == "2":
@@ -524,16 +532,34 @@ def execute_action_direct(choice, config, server, username, password, selected_d
 
             if not success:
                 errors.append(msg)
+                # Αν υπάρχει εσωτερικό σφάλμα βάσης, το γράφουμε ξεχωριστά για troubleshooting
                 logging.error(msg)
+
+    end_time = datetime.now()
+    end_time_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
 
     if errors:
         status = "FAILED"
         log_type = "Error"
-        logging.error(f"<< Direct Task Completed with errors: {tag}")
+        prefix = "Error :"
+        status_text = "Completed with errors"
     else:
         status = "SUCCESS"
         log_type = "Log"
-        logging.info(f"<< Direct Task Completed successfully: {tag}")
+        prefix = "Log :"
+        status_text = "Completed successfully"
+
+    # Σύνθεση της ΜΙΑΣ ΚΑΙ ΜΟΝΑΔΙΚΗΣ γραμμής
+    single_line_log = f"{start_time_str} [{prefix}] >> Direct Task Started: {tag} - {end_time_str} - {status_text}"
+
+    # Προσθήκη στο webhook payload
+    current_run_logs.append(single_line_log)
+
+    # Εγγραφή στο τοπικό αρχείο logs (maintenance_log.txt) μέσω του logger
+    if status == "SUCCESS":
+        logging.info(f"Direct Task Started: {tag} - {end_time_str} - {status_text}")
+    else:
+        logging.error(f"Direct Task Started: {tag} - {end_time_str} - {status_text}")
 
     send_webhook_notification(inst_name, status, log_type, f"Direct_{tag}")
 
@@ -543,6 +569,7 @@ def execute_macro_sequence(seq_name, macro_data, config, server, username, passw
     current_run_logs = []
 
     start_time = datetime.now()
+    start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
     inst_name = config.get("installation_name", "Unknown_Installation")
 
     if isinstance(macro_data, dict):
@@ -577,20 +604,29 @@ def execute_macro_sequence(seq_name, macro_data, config, server, username, passw
                     macro_errors.append(f"Task {step_tag} on [{db}] failed -> {msg}")
 
     end_time = datetime.now()
-    start_str = start_time.strftime("%H:%M:%S")
-    end_str = end_time.strftime("%H:%M:%S")
+    end_time_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
 
     if not macro_errors:
         status = "SUCCESS"
         log_type = "Log"
-        logging.info(f"[MACRO SUCCESS] '{seq_name}' | Duration: {start_str} -> {end_str} | Scope: {macro_databases}")
+        prefix = "Log :"
+        status_text = f"Completed successfully | Scope: {macro_databases}"
     else:
         status = "FAILED"
         log_type = "Error"
-        logging.error(
-            f"[MACRO FAILED] '{seq_name}' | Duration: {start_str} -> {end_str} | Unresolved issues listed below:")
+        prefix = "Error :"
+        status_text = "Completed with unresolved issues"
         for err in macro_errors:
             logging.error(f"   ↳ {err}")
+
+    # Σύνθεση Single Line για Macros
+    single_line_log = f"{start_time_str} [{prefix}] >> Macro Task Started: {seq_name} - {end_time_str} - {status_text}"
+    current_run_logs.append(single_line_log)
+
+    if status == "SUCCESS":
+        logging.info(f"Macro Task Started: {seq_name} - {end_time_str} - {status_text}")
+    else:
+        logging.error(f"Macro Task Started: {seq_name} - {end_time_str} - {status_text}")
 
     send_webhook_notification(inst_name, status, log_type, seq_name)
 
@@ -603,7 +639,6 @@ def execute_macro_sequence(seq_name, macro_data, config, server, username, passw
             "auto": False, "recurrence": "none", "schedule_data": {}
         }
     save_full_config(config)
-
 
 def check_and_run_autos(config, server, username, password, databases):
     sequences = config.get("sequences", {})

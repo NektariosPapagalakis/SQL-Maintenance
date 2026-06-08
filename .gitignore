@@ -5,3 +5,5 @@ maintenance_log.txt
 
 # IDE config files
 .idea/
+.build/
+.dist/
