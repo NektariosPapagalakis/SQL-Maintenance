@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 import pyodbc
 from cryptography.fernet import Fernet
 import urllib.request
+import urllib.error
 
 # Application Metadata
-VERSION = "1.3.2"
-WEBHOOK_URL = "https://cloud.activepieces.com/api/v1/webhooks/YZDmbN3jTJBJYZV8oFZGj"
+VERSION = "1.3.9"
+WEBHOOK_URL = None  # Ορίζεται δυναμικά κατά το setup
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -32,33 +33,6 @@ class CustomPrefixFormatter(logging.Formatter):
         log_msg = f"{self.formatTime(record, '%Y-%m-%d %H:%M:%S')} [{prefix}] {record.getMessage()}"
         current_run_logs.append(log_msg)  # Κρατάμε το log για το webhook
         return log_msg
-
-
-def send_webhook_notification(installation_name, status, log_type, macro_name):
-    """Στέλνει JSON Payload στο Activepieces Webhook με την προσθήκη των log_type και job."""
-    payload = {
-        "job": "MaintenancePlan",  # Σταθερή παράμετρος
-        "installation_name": installation_name,
-        "status": status,
-        "log_type": log_type,  # "Log" ή "Error"
-        "macro_name": macro_name,
-        "log_output": "\n".join(current_run_logs)
-    }
-
-    try:
-        data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        req = urllib.request.Request(
-            WEBHOOK_URL,
-            data=data,
-            headers={'Content-Type': 'application/json; charset=utf-8'},
-            method='POST'
-        )
-        with urllib.request.urlopen(req, timeout=15) as response:
-            if response.status in [200, 201, 204]:
-                pass
-    except Exception as e:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [Error :] Failed to send webhook: {e}\n")
 
 
 def is_admin():
@@ -123,10 +97,117 @@ def save_credentials(username, password):
     save_full_config(config)
 
 
-def get_databases(username, password):
+def get_webhook_url():
+    """Αποκρυπτογραφεί και επιστρέφει το Webhook URL από το config."""
+    config = load_full_config()
+    if "webhook_url_encrypted" not in config:
+        return None
+
+    key = load_key()
+    fernet = Fernet(key)
+    try:
+        return fernet.decrypt(config["webhook_url_encrypted"].encode()).decode()
+    except Exception:
+        return None
+
+
+def save_webhook_url(url):
+    """Κρυπτογραφεί το Webhook URL και αποθηκεύει και τα 4 τελευταία ψηφία ως hint."""
+    config = load_full_config()
+    key = load_key()
+    fernet = Fernet(key)
+
+    config["webhook_url_encrypted"] = fernet.encrypt(url.encode()).decode()
+    config["webhook_url_hint"] = url[-4:] if len(url) >= 4 else url
+    save_full_config(config)
+
+
+def send_webhook_notification(installation_name, status, log_type, macro_name):
+    """Στέλνει JSON Payload στο Activepieces Webhook με την προσθήκη των log_type και job."""
+    current_webhook_url = get_webhook_url()
+
+    if not current_webhook_url:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [Error :] Webhook URL is not configured. Notification skipped.\n")
+        return False, "Webhook URL missing"
+
+    payload = {
+        "job": "MaintenancePlan",
+        "installation_name": installation_name,
+        "status": status,
+        "log_type": log_type,
+        "macro_name": macro_name,
+        "log_output": "\n".join(current_run_logs)
+    }
+
+    try:
+        data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        req = urllib.request.Request(
+            current_webhook_url,
+            data=data,
+            headers={
+                'Content-Type': 'application/json; charset=utf-8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            },
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            status_code = response.getcode()
+            if status_code in [200, 201, 204]:
+                return True, "Success"
+            return False, f"Unexpected HTTP Status: {status_code}"
+
+    except urllib.error.HTTPError as e:
+        err_msg = f"HTTP Error {e.code}: {e.reason}"
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [Error :] {err_msg}\n")
+        return False, err_msg
+    except Exception as e:
+        err_msg = f"Failed to send webhook: {e}"
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [Error :] {err_msg}\n")
+        return False, err_msg
+
+
+def test_webhook_manually(config):
+    """Εκτελεί μια δοκιμαστική κλήση (Test) στο Webhook με εικονικά δεδομένα."""
+    global current_run_logs
+    current_run_logs = ["This is a manual test log message to verify Activepieces flow integration."]
+
+    inst_name = config.get("installation_name", "Test_Installation")
+    print(f"\n[*] Αποστολή Test Payload στο Webhook...")
+    print(f"[*] URL Hint: ...{config.get('webhook_url_hint', 'N/A')}")
+
+    success, msg = send_webhook_notification(inst_name, "TEST_SUCCESS", "Log", "Manual_Webhook_Test")
+
+    if success:
+        print("[✓] Το Test Payload στάλθηκε επιτυχώς! Ελέγξτε το Activepieces και το Google Sheet σας.")
+    else:
+        print(f"[!] Αποτυχία αποστολής Test: {msg}")
+
+
+def update_webhook_menu_action():
+    """Διαδραστική αλλαγή του Webhook URL από το μενού επιλογών."""
+    current_url = get_webhook_url()
+    print("\n=== Ενημέρωση Activepieces Webhook URL ===")
+    if current_url:
+        print(f"Τρέχον URL: {current_url}")
+    else:
+        print("Δεν έχει οριστεί Webhook URL ακόμα.")
+
+    new_url = input("\nΔώσε το Νέο Webhook URL (ή πάτα Enter για ακύρωση): ").strip()
+    if new_url:
+        save_webhook_url(new_url)
+        print("[✓] Το Webhook URL ενημερώθηκε και κρυπτογραφήθηκε επιτυχώς!")
+    else:
+        print("[*] Η διαδικασία ακυρώθηκε. Δεν άλλαξε κάτι.")
+
+
+def get_databases(server, username, password):
     conn_str = (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER=DESKTOP-JROIMSG\\SQLEXPRESS;"
+        f"SERVER={server};"
         f"UID={username};"
         f"PWD={password};"
     )
@@ -147,28 +228,28 @@ def get_databases(username, password):
         return None
 
 
-def run_integrity_check(db_name, username, password):
+def run_integrity_check(server, db_name, username, password):
     integrity_query = f"DBCC CHECKDB ('{db_name}') WITH PHYSICAL_ONLY, NO_INFOMSGS;"
-    cmd = f'sqlcmd -S DESKTOP-JROIMSG\\SQLEXPRESS -U {username} -P "{password}" -Q "{integrity_query}"'
+    cmd = f'sqlcmd -S {server} -U {username} -P "{password}" -Q "{integrity_query}"'
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode == 0:
         return True, None
     return False, f"[{db_name}] DBCC CHECKDB failed: {result.stderr or result.stdout}"
 
 
-def run_update_statistics(db_name, username, password):
+def run_update_statistics(server, db_name, username, password):
     stats_query = f"USE [{db_name}]; EXEC sp_updatestats;"
-    cmd = f'sqlcmd -S DESKTOP-JROIMSG\\SQLEXPRESS -U {username} -P "{password}" -Q "{stats_query}"'
+    cmd = f'sqlcmd -S {server} -U {username} -P "{password}" -Q "{stats_query}"'
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode == 0:
         return True, None
     return False, f"[{db_name}] sp_updatestats failed: {result.stderr or result.stdout}"
 
 
-def analyze_and_save_index_stats(db_name, username, password, config):
+def analyze_and_save_index_stats(server, db_name, username, password, config):
     conn_str = (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER=DESKTOP-JROIMSG\\SQLEXPRESS;"
+        f"SERVER={server};"
         f"DATABASE={db_name};"
         f"UID={username};"
         f"PWD={password};"
@@ -212,7 +293,49 @@ def get_free_disk_space_mb(folder_path):
         return 0.0
 
 
-def create_backup(db_name, username, password, base_target_folder, config):
+def get_or_set_db_path(config, db_name):
+    if "paths" not in config:
+        config["paths"] = {}
+
+    if db_name in config["paths"]:
+        return config["paths"][db_name]
+
+    if config.get("global_auto", False):
+        config["paths"][db_name] = BASE_DIR
+        save_full_config(config)
+        return BASE_DIR
+
+    print(f"\n[?] Δεν έχει οριστεί φάκελος αποθήκευσης για τη βάση [{db_name}].")
+    print(f"1. Χρήση προεπιλεγμένου φακέλου ({BASE_DIR})")
+    print("2. Εισαγωγή προσαρμοσμένου φακέλου (Custom Path)")
+
+    choice = input("Επιλογή (1-2): ").strip()
+
+    if choice == "2":
+        while True:
+            custom_path = input(f"Δώσε το πλήρες path για τη βάση {db_name} (π.χ. D:\\SQL_Backups): ").strip()
+            if custom_path:
+                custom_path = os.path.normpath(custom_path)
+
+                if not os.path.exists(custom_path):
+                    try:
+                        os.makedirs(custom_path)
+                        print(f"[✓] Ο φάκελος '{custom_path}' δημιουργήθηκε επιτυχώς.")
+                    except Exception as e:
+                        print(f"[!] Αποτυχία δημιουργίας φακέλου: {e}. Δοκίμασε ξανά.")
+                        continue
+
+                config["paths"][db_name] = custom_path
+                save_full_config(config)
+                return custom_path
+            print("[!] Το path δεν μπορεί να είναι κενό.")
+
+    config["paths"][db_name] = BASE_DIR
+    save_full_config(config)
+    return BASE_DIR
+
+
+def create_backup(server, db_name, username, password, base_target_folder, config):
     db_folder = os.path.join(base_target_folder, db_name)
     if not os.path.exists(db_folder):
         try:
@@ -234,7 +357,7 @@ def create_backup(db_name, username, password, base_target_folder, config):
 
     backup_query = f"BACKUP DATABASE [{db_name}] TO DISK='{backup_path}' WITH FORMAT, MEDIANAME='SQLServerBackup', NAME='Full Backup of {db_name}';"
 
-    cmd = f'sqlcmd -S DESKTOP-JROIMSG\\SQLEXPRESS -U {username} -P "{password}" -Q "{backup_query}"'
+    cmd = f'sqlcmd -S {server} -U {username} -P "{password}" -Q "{backup_query}"'
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
     if result.returncode == 0:
@@ -283,33 +406,40 @@ def cleanup_backups(config):
 
 def select_databases(databases):
     while True:
-        print("\nΕπίλεξε τις βάσεις που θέλεις (π.χ. 1,3,4) ή γράψε 'all' για όλες:")
+        print("\n=== Διαθέσιμες Βάσεις Δεδομένων ===")
+        for idx, db in enumerate(databases, 1):
+            print(f"{idx}. {db}")
+        print("-----------------------------------")
+        print("Επίλεξε τις βάσεις που θέλεις χρησιμοποιώντας τους αριθμούς τους (π.χ. 1,2) ή γράψε 'all' για όλες:")
+
         user_input = input("Επιλογή: ").strip().lower()
         if user_input == 'all':
             return databases
+
         try:
             choices = [int(x.strip()) for x in user_input.split(",") if x.strip()]
             valid = True
             temp_selection = []
+
             for choice in choices:
                 if 1 <= choice <= len(databases):
                     temp_selection.append(databases[choice - 1])
                 else:
-                    print(f"[!] Ο αριθμός {choice} είναι εκτός ορίων.")
+                    print(f"[!] Ο αριθμός {choice} δεν αντιστοιχεί σε κάποια βάση.")
                     valid = False
                     break
+
             if valid and temp_selection:
+                print(f"[✓] Επιλέχθηκαν: {', '.join(temp_selection)}")
                 return temp_selection
         except ValueError:
-            print("[!] Μη έγκυρη μορφή.")
+            print("[!] Μη έγκυρη μορφή. Παρακαλώ δώσε αριθμούς χωρισμένους με κόμμα (π.χ. 1,2).")
 
 
 def create_sequence(config, databases):
     print("\n=== Δημιουργία Νέας Αλληλουχίας ===")
     print("\nΒήμα 1: Επιλογή Βάσεων Δεδομένων για την Αλληλουχία")
     print("--------------------------------------------------")
-    for idx, db in enumerate(databases, 1):
-        print(f"{idx}. {db}")
     selected_dbs = select_databases(databases)
 
     print("\nΒήμα 2: Καταγραφή Εντολών")
@@ -361,14 +491,14 @@ def create_sequence(config, databases):
         "recurrence": recurrence_type,
         "schedule_data": schedule_data
     }
+    config = load_full_config() # Ανανέωση
     save_full_config(config)
     print(f"\n[✓] Η αλληλουχία '{name}' αποθηκεύτηκε επιτυχώς!")
 
 
-def execute_action_direct(choice, config, username, password, selected_databases):
-    """Εκτελεί μια μεμονωμένη direct εντολή από το μενού και στέλνει το αποτέλεσμα στο Webhook."""
+def execute_action_direct(choice, config, server, username, password, selected_databases):
     global current_run_logs
-    current_run_logs = []  # Καθαρισμός για το τρέχον direct run
+    current_run_logs = []
 
     action_names = {"1": "BACKUP", "2": "CLEANUP", "3": "INTEGRITY_CHECK", "4": "UPDATE_STATS", "5": "INDEX_ANALYSIS"}
     tag = action_names.get(choice, "UNKNOWN")
@@ -383,15 +513,14 @@ def execute_action_direct(choice, config, username, password, selected_databases
     else:
         for db in selected_databases:
             if choice == "1":
-                if "paths" not in config: config["paths"] = {}
-                if db not in config["paths"]: config["paths"][db] = BASE_DIR
-                success, msg = create_backup(db, username, password, config["paths"][db], config)
+                db_path = get_or_set_db_path(config, db)
+                success, msg = create_backup(server, db, username, password, db_path, config)
             elif choice == "3":
-                success, msg = run_integrity_check(db, username, password)
+                success, msg = run_integrity_check(server, db, username, password)
             elif choice == "4":
-                success, msg = run_update_statistics(db, username, password)
+                success, msg = run_update_statistics(server, db, username, password)
             elif choice == "5":
-                success, msg = analyze_and_save_index_stats(db, username, password, config)
+                success, msg = analyze_and_save_index_stats(server, db, username, password, config)
 
             if not success:
                 errors.append(msg)
@@ -406,14 +535,12 @@ def execute_action_direct(choice, config, username, password, selected_databases
         log_type = "Log"
         logging.info(f"<< Direct Task Completed successfully: {tag}")
 
-    # Αποστολή ειδοποίησης στο Webhook και για τα direct actions
     send_webhook_notification(inst_name, status, log_type, f"Direct_{tag}")
 
 
-def execute_macro_sequence(seq_name, macro_data, config, username, password, databases):
-    """Εκτελεί μια αλληλουχία, παράγει συμπυκνωμένο log, υπολογίζει το log_type και στέλνει στο Webhook."""
+def execute_macro_sequence(seq_name, macro_data, config, server, username, password, databases):
     global current_run_logs
-    current_run_logs = []  # Καθαρισμός για το τρέχον run
+    current_run_logs = []
 
     start_time = datetime.now()
     inst_name = config.get("installation_name", "Unknown_Installation")
@@ -437,15 +564,14 @@ def execute_macro_sequence(seq_name, macro_data, config, username, password, dat
         else:
             for db in macro_databases:
                 if step == "1":
-                    if "paths" not in config: config["paths"] = {}
-                    if db not in config["paths"]: config["paths"][db] = BASE_DIR; save_full_config(config)
-                    success, msg = create_backup(db, username, password, config["paths"][db], config)
+                    db_path = get_or_set_db_path(config, db)
+                    success, msg = create_backup(server, db, username, password, db_path, config)
                 elif step == "3":
-                    success, msg = run_integrity_check(db, username, password)
+                    success, msg = run_integrity_check(server, db, username, password)
                 elif step == "4":
-                    success, msg = run_update_statistics(db, username, password)
+                    success, msg = run_update_statistics(server, db, username, password)
                 elif step == "5":
-                    success, msg = analyze_and_save_index_stats(db, username, password, config)
+                    success, msg = analyze_and_save_index_stats(server, db, username, password, config)
 
                 if not success:
                     macro_errors.append(f"Task {step_tag} on [{db}] failed -> {msg}")
@@ -454,7 +580,6 @@ def execute_macro_sequence(seq_name, macro_data, config, username, password, dat
     start_str = start_time.strftime("%H:%M:%S")
     end_str = end_time.strftime("%H:%M:%S")
 
-    # Καθορισμός status και log_type δυναμικά
     if not macro_errors:
         status = "SUCCESS"
         log_type = "Log"
@@ -467,10 +592,8 @@ def execute_macro_sequence(seq_name, macro_data, config, username, password, dat
         for err in macro_errors:
             logging.error(f"   ↳ {err}")
 
-    # Αποστολή στο Activepieces Webhook
     send_webhook_notification(inst_name, status, log_type, seq_name)
 
-    # Ενημέρωση Metadata στο config
     now_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(config["sequences"][seq_name], dict):
         config["sequences"][seq_name]["last_run"] = now_str
@@ -482,7 +605,7 @@ def execute_macro_sequence(seq_name, macro_data, config, username, password, dat
     save_full_config(config)
 
 
-def check_and_run_autos(config, username, password, databases):
+def check_and_run_autos(config, server, username, password, databases):
     sequences = config.get("sequences", {})
     if not sequences: return False
 
@@ -518,7 +641,7 @@ def check_and_run_autos(config, username, password, databases):
                     should_run = True
 
         if should_run:
-            execute_macro_sequence(seq_name, macro_data, config, username, password, databases)
+            execute_macro_sequence(seq_name, macro_data, config, server, username, password, databases)
             executed_any = True
 
     return executed_any
@@ -528,7 +651,7 @@ def setup_windows_task():
     print("\n=== Δημιουργία Windows Scheduled Task ===")
     if not is_admin():
         print("[!] Σφάλμα: Απαιτούνται δικαιώματα Διαχειριστή.")
-        return
+        return False
 
     exe_path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(sys.argv[0])
     ps_command = (
@@ -545,19 +668,115 @@ def setup_windows_task():
         config["global_auto"] = True
         save_full_config(config)
         print("\n[✓] Το Task δημιουργήθηκε με επιτυχία!")
+        return True
     except subprocess.CalledProcessError as e:
         print(f"\n[!] Αποτυχία δημιουργίας Task: {e.stderr}")
+        return False
+
+
+def settings_submenu(config):
+    """Sub-menu για τη διαχείριση των ρυθμίσεων της εφαρμογής."""
+    while True:
+        print("\n=== Settings ===")
+        print("1. Setup Task")
+        print("2. Test Webhook Connection")
+        print("3. Update Webhook URL")
+        print("4. Back")
+
+        sub_choice = input("Επιλογή (1-4): ").strip()
+
+        if sub_choice == "1":
+            setup_windows_task()
+        elif sub_choice == "2":
+            test_webhook_manually(config)
+        elif sub_choice == "3":
+            update_webhook_menu_action()
+            config = load_full_config()
+        elif sub_choice == "4":
+            print("[*] Επιστροφή στο Κεντρικό Μενού...")
+            break
+        else:
+            print("[!] Μη έγκυρη επιλογή στο μενού ρυθμίσεων.")
+
+
+def direct_actions_submenu(config, server, username, password, databases):
+    """Sub-menu για την εκτέλεση μεμονωμένων (Direct) εργασιών."""
+    while True:
+        print("\n=== Direct Actions ===")
+        print("1. Λήψη Back up")
+        print("2. Clean up παλιών Back up")
+        print("3. Database Integrity Check")
+        print("4. Update Statistics")
+        print("5. Index Analysis")
+        print("6. Back")
+
+        choice = input("Επιλογή (1-6): ").strip()
+
+        if choice == "6":
+            print("[*] Επιστροφή στο Κεντρικό Μενού...")
+            break
+
+        if choice in ["1", "2", "3", "4", "5"]:
+            selected_databases = select_databases(databases)
+            if selected_databases:
+                execute_action_direct(choice, config, server, username, password, selected_databases)
+                print("\n[✓] Η εργασία ολοκληρώθηκε.")
+            else:
+                print("[*] Δεν επιλέχθηκε βάση. Ακύρωση εργασίας.")
+        else:
+            print("[!] Μη έγκυρη επιλογή.")
+
+
+def macros_submenu(config, server, username, password, databases):
+    """Sub-menu για την καταγραφή και εκτέλεση Macros."""
+    while True:
+        print("\n=== Macros ===")
+        print("1. Record Macro")
+        print("2. Run Macro")
+        print("3. Back")
+
+        choice = input("Επιλογή (1-3): ").strip()
+
+        if choice == "3":
+            print("[*] Επιστροφή στο Κεντρικό Μενού...")
+            break
+
+        if choice == "1":
+            create_sequence(config, databases)
+            # Ανανέωση του config στη μνήμη αμέσως μετά την αποθήκευση
+            config = load_full_config()
+        elif choice == "2":
+            sequences = config.get("sequences", {})
+            if not sequences:
+                print("[!] Δεν υπάρχουν αποθηκευμένες αλληλουχίες.")
+                continue
+            seq_list = list(sequences.keys())
+            for idx, seq_name in enumerate(seq_list, 1):
+                print(f"{idx}. {seq_name}")
+            try:
+                seq_choice = int(input(f"Επίλεξε αλληλουχία (1-{len(seq_list)}): "))
+                if 1 <= seq_choice <= len(seq_list):
+                    selected_seq_name = seq_list[seq_choice - 1]
+                    execute_macro_sequence(selected_seq_name, sequences[selected_seq_name], config, server, username, password, databases)
+                    config = load_full_config()
+                else:
+                    print("[!] Μη έγκυρος αριθμός.")
+            except ValueError:
+                print("[!] Παρακαλώ δώστε έναν αριθμό.")
+        else:
+            print("[!] Μη έγκυρη επιλογή.")
 
 
 def main():
     config = load_full_config()
-    is_global_auto = config.get("global_auto", False)
 
-    if is_global_auto:
-        f_null = open(os.devnull, 'w')
-        sys.stdout = f_null
-        sys.stderr = f_null
+    if "global_auto" not in config:
+        config["global_auto"] = False
+        save_full_config(config)
 
+    is_global_auto = config["global_auto"]
+
+    # Αρχικοποίηση του Logger
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     logger.handlers = []
@@ -572,52 +791,111 @@ def main():
         handler_stream.setFormatter(formatter)
         logger.addHandler(handler_stream)
         print("=== SQL Server Maintenance Utility ===")
+    else:
+        f_null = open(os.devnull, 'w')
+        sys.stdout = f_null
+        sys.stderr = f_null
 
+    # 1. Έλεγχος / Εισαγωγή Installation Name
     if "installation_name" not in config:
-        print("\n[*] Πρώτη εκκίνηση: Ορίστε ένα όνομα για αυτή την εγκατάσταση (π.χ. Client_A):")
-        inst_name = input("Όνομα Εγκατάστασης: ").strip()
-        config["installation_name"] = inst_name if inst_name else "Default_Installation"
-        save_full_config(config)
+        if is_global_auto:
+            config["installation_name"] = "Default_Installation"
+            save_full_config(config)
+        else:
+            print("\n[*] Πρώτη εκκίνηση: Ορίστε ένα όνομα για αυτή την εγκατάσταση (π.χ. Client_A):")
+            inst_name = input("Όνομα Εγκατάστασης: ").strip()
+            config["installation_name"] = inst_name if inst_name else "Default_Installation"
+            save_full_config(config)
+
+    # 2. Έλεγχος / Εισαγωγή SQL Server Instance
+    if "sql_server" not in config:
+        if not is_global_auto:
+            print("\n[*] Πρώτη εκκίνηση: Ορίστε τον SQL Server (πατήστε Enter για default: localhost\\SQLEXPRESS):")
+            srv_input = input("SQL Server: ").strip()
+            config["sql_server"] = srv_input if srv_input else "localhost\\SQLEXPRESS"
+            save_full_config(config)
+        else:
+            config["sql_server"] = "localhost\\SQLEXPRESS"
+            save_full_config(config)
+
+    # 3. Έλεγχος / Εισαγωγή Retention Days στο Set up
+    if "retention_days" not in config:
+        if not is_global_auto:
+            print("\n[*] Πρώτη εκκίνηση: Ορίστε ημέρες διατήρησης των Backup (πατήστε Enter για default: 7):")
+            ret_input = input("Ημέρες Διατήρησης: ").strip()
+            try:
+                config["retention_days"] = int(ret_input) if ret_input else 7
+            except ValueError:
+                print("[!] Μη έγκυρος αριθμός. Ορίστηκε η προεπιλογή: 7 ημέρες.")
+                config["retention_days"] = 7
+            save_full_config(config)
+        else:
+            config["retention_days"] = 7
+            save_full_config(config)
+
+    # 4. Έλεγχος / Εισαγωγή Webhook URL στο Set up
+    if "webhook_url_encrypted" not in config:
+        if not is_global_auto:
+            while True:
+                print("\n[*] Πρώτη εκκίνηση: Ορίστε το Activepieces Webhook URL για τα notifications:")
+                url_input = input("Webhook URL: ").strip()
+                if url_input:
+                    save_webhook_url(url_input)
+                    break
+                print("[!] Το Webhook URL είναι υποχρεωτικό για την καταγραφή των εργασιών!")
+        else:
+            logging.error("Webhook URL missing in config during global_auto boot.")
+        config = load_full_config()
+
     if config.get("version") != VERSION:
         config["version"] = VERSION
         save_full_config(config)
 
+    server = config.get("sql_server", "localhost\\SQLEXPRESS")
+
     username, password = get_credentials()
     if not username or not password:
-        if is_global_auto: return
+        if is_global_auto:
+            logging.error("Credentials missing in global_auto mode.")
+            return
         username = input("Username: ")
         password = input("Password: ")
         save_credentials(username, password)
         config = load_full_config()
 
-    databases = get_databases(username, password)
-    if not databases: return
-
-    executed_autos = check_and_run_autos(config, username, password, databases)
-
-    if is_global_auto:
+    databases = get_databases(server, username, password)
+    if not databases:
+        logging.error(f"Could not fetch databases for server: {server}")
         return
 
-    # --- INTERACTIVE MENU ---
-    print(
-        "1. Λήψη Back up\n2. Clean up παλιών Back up\n3. Database Integrity Check\n4. Update Statistics\n5. Index Analysis\n6. Record Macro\n7. Run Macro\n8. Setup Task")
-    menu_choice = input("Επιλογή (1-8): ").strip()
-
-    if menu_choice == "6": create_sequence(config, databases); return
-    if menu_choice == "8": setup_windows_task(); return
-    if menu_choice == "7":
-        sequences = config.get("sequences", {})
-        if not sequences: print("[!] Δεν υπάρχουν αποθηκευμένες αλληλουχίες."); return
-        seq_list = list(sequences.keys())
-        for idx, seq_name in enumerate(seq_list, 1):
-            print(f"{idx}. {seq_name}")
-        seq_choice = int(input(f"Επίλεξε αλληλουχία (1-{len(seq_list)}): "))
-        selected_seq_name = seq_list[seq_choice - 1]
-        execute_macro_sequence(selected_seq_name, sequences[selected_seq_name], config, username, password, databases)
+    executed_autos = check_and_run_autos(config, server, username, password, databases)
+    if is_global_auto or executed_autos:
         return
 
-    selected_databases = select_databases(databases)
-    execute_action_direct(menu_choice, config, username, password, selected_databases)
+    # --- MAIN APPLICATION LOOP ---
+    while True:
+        print("\n=== ΚΕΝΤΡΙΚΟ ΜΕΝΟΥ ===")
+        print("1. Direct Actions")
+        print("2. Macros")
+        print("3. Settings")
+        print("4. Exit")
+
+        menu_choice = input("Επιλογή (1-4): ").strip()
+
+        if menu_choice == "4":
+            print("[*] Τερματισμός εφαρμογής. Clean exit.")
+            break
+        elif menu_choice == "1":
+            direct_actions_submenu(config, server, username, password, databases)
+            config = load_full_config()
+        elif menu_choice == "2":
+            macros_submenu(config, server, username, password, databases)
+            config = load_full_config()
+        elif menu_choice == "3":
+            settings_submenu(config)
+            config = load_full_config()
+        else:
+            print("[!] Μη έγκυρη επιλογή. Δοκιμάστε ξανά.")
 
 
 if __name__ == "__main__":
