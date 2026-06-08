@@ -2,6 +2,7 @@
 secret.key
 config.json
 maintenance_log.txt
+MaintenancePlanCustom.spec
 
 # IDE config files
 .idea/
