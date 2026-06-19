@@ -641,7 +641,9 @@ def execute_macro_sequence(seq_name, macro_data, config, server, username, passw
     save_full_config(config)
 
 def check_and_run_autos(config, server, username, password, databases):
-    sequences = config.get("sequences", {})
+    # Ξαναδιαβάζουμε το config για να είμαστε σίγουροι ότι έχουμε τα τελευταία δεδομένα από τον δίσκο
+    fresh_config = load_full_config()
+    sequences = fresh_config.get("sequences", {})
     if not sequences: return False
 
     now = datetime.now()
@@ -650,7 +652,8 @@ def check_and_run_autos(config, server, username, password, databases):
     current_weekday = now.weekday()
     executed_any = False
 
-    for seq_name, macro_data in sequences.items():
+    for seq_name in list(sequences.keys()):
+        macro_data = sequences[seq_name]
         if not isinstance(macro_data, dict) or not macro_data.get("auto", False): continue
 
         last_run_str = macro_data.get("last_run", "-")
@@ -676,7 +679,11 @@ def check_and_run_autos(config, server, username, password, databases):
                     should_run = True
 
         if should_run:
-            execute_macro_sequence(seq_name, macro_data, config, server, username, password, databases)
+            # Περνάμε το fresh_config που μόλις διαβάσαμε
+            execute_macro_sequence(seq_name, macro_data, fresh_config, server, username, password, databases)
+            # Επανεκκίνηση ανάγνωσης του config μετά την εκτέλεση για να αποτυπωθεί το last_run στο επόμενο loop
+            fresh_config = load_full_config()
+            sequences = fresh_config.get("sequences", {})
             executed_any = True
 
     return executed_any
